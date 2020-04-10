@@ -1,0 +1,65 @@
+node {
+    // Get Artifactory server instance, defined in the Artifactory Plugin administration page.
+    def server = Artifactory.server "artifactory-pdm"
+    // Create an Artifactory Maven instance.
+    def rtMaven = Artifactory.newMavenBuild()
+    def buildInfo
+    
+    deleteDir()
+    
+ rtMaven.tool = "mvn"
+
+    stage('Clone sources') {
+        git url: 'https://github.com/gunjvm/WebApp.git'
+    }
+    
+   // stage("build & SonarQube analysis") {
+           //   withSonarQubeEnv('sonarqube') {
+               // sh 'mvn sonar:sonar -Dsonar.host.url=http://52.226.66.78:9000// -Dsonar.login=5d3962136ddf80552905465cc631857d31ba2291 -Dsonar.sources=. -Dsonar.tests=. -Dsonar.test.inclusions=**/test/java/servlet/createpage_junit.java -Dsonar.exclusions=**/test/java/servlet/createpage_junit.java -X'
+             // }
+         // }
+
+    stage('Maven build') {
+        buildInfo = rtMaven.run pom: 'pom.xml', goals: 'clean install'
+    }
+    
+     stage('Build Notification') {
+        slackSend channel: '#pdm-magk', color: 'good', message: "${env.BUILD_NUMBER} - Build completed: PDM-Pipeline (<${env.BUILD_URL}|Open>)", teamDomain: 'gunjvm', tokenCredentialId: 'slack-jenkins'
+    }
+    stage('Artifactory configuration') {
+        // Tool name from Jenkins configuration
+        rtMaven.tool = "maven"
+        // Set Artifactory repositories for dependencies resolution and artifacts deployment.
+        rtMaven.deployer releaseRepo:'maven-release', snapshotRepo:'maven-snapshot', server: server
+        // rtMaven.resolver releaseRepo:'libs-release', snapshotRepo:'libs-snapshot', server: server
+    }
+
+    stage('Publish build info') {
+        server.publishBuildInfo buildInfo
+    }
+    
+    //stage('Quality check') {
+        //blazeMeterTest credentialsId: 'jenkins-blaze', testId: '7895716.taurus', workspaceId: '475891'
+    //}
+    
+    stage('QA deploy') {
+        deploy adapters: [tomcat7(credentialsId: 'j-tomcat', path: '', url: 'http://18.222.6.241:8080/')], contextPath: '/PDMQAWebapp', war: '**/*.war'
+    }
+    
+    stage('QA Notification') {
+        slackSend channel: '#pdm-magk', color: 'good', message: "${env.BUILD_NUMBER} - QA deploy completed http://18.222.6.241:8080/PDMQAWebapp", teamDomain: 'gunjvm', tokenCredentialId: 'slack-jenkins'
+    }
+    
+    stage('PROD deploy') {
+    //    deploy adapters: [tomcat7(credentialsId: 'j-tomcat', path: '', url: 'http://3.14.72.163:8080/')], contextPath: '/PDMPRODWebapp', war: '**/*.war'
+    }
+    
+    stage('PROD Notification') {
+        slackSend channel: '#pdm-magk', color: 'good', message: "${env.BUILD_NUMBER} - PROD deploy completed http://3.14.72.163:8080/PDMPRODWebapp", teamDomain: 'gunjvm', tokenCredentialId: 'slack-jenkins'
+    }
+    
+    stage('Jira Prod update') {
+        jiraComment body: "PROD deploy completed - Jenkins URL(${env.BUILD_URL}), PROD webapp - http://3.14.72.163:8080/PDMPRODWebapp", issueKey: "PDM-1"
+    }
+    
+    }
