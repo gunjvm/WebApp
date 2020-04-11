@@ -6,76 +6,67 @@ node {
     def buildInfo
     
     deleteDir()
-    
-    
-    
+        
  rtMaven.tool = "mvn"
 
-    stage('Clone sources') {
-        git url: 'https://github.com/gunjvm/WebApp.git'
+    stage('Git Checkout') {
+        git branch:'PDM', url: 'https://github.com/gunjvm/WebApp.git'
     }
 
-    stage('Sonarqube scan') {
+    stage('Sonarqube Scan') {
         withSonarQubeEnv('sonarqube') {
         sh "mvn clean install -Dsonar.test.exclusions=**/test/java/servlet/createpage_junit.java -Dsonar.login=admin -Dsonar.password=admin -Dsonar.tests=. -Dsonar.inclusions=**/test/java/servlet/createpage_junit.java -Dsonar.sources=. sonar:sonar -Dsonar.host.url=http://52.226.66.78:9000"
         }
     }
 
-    stage('Maven build') {
+    stage('Maven Build') {
+        // run build
         buildInfo = rtMaven.run pom: 'pom.xml', goals: 'clean install'
-    }
-    
-     stage('Build Notification') {
+        // notify team on SLACK
         slackSend channel: '#pdm-magk', color: 'good', message: "${env.BUILD_NUMBER} - Build completed: PDM-Pipeline (<${env.BUILD_URL}|Open>)", teamDomain: 'gunjvm', tokenCredentialId: 'slack-jenkins'
     }
     
-    stage('Artifactory configuration') {
+    stage('Artifactory Publish') {
         // Tool name from Jenkins configuration
         rtMaven.tool = "mvn"
         // Set Artifactory repositories for dependencies resolution and artifacts deployment.
         rtMaven.deployer releaseRepo:'maven-release', snapshotRepo:'maven-snapshot', server: server
-        // rtMaven.resolver releaseRepo:'libs-release', snapshotRepo:'libs-snapshot', server: server
-    }
-
-    stage('Publish build info') {
-        server.publishBuildInfo buildInfo
+       // Publish build
+       server.publishBuildInfo buildInfo
     }
     
-    stage('Quality check - sel') {
-        //blazeMeterTest credentialsId: 'jenkins-blaze', testId: '7895716.taurus', workspaceId: '475891'
-        sh "mvn install -f functionaltest/pom.xml"
-        publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, keepAll: false, reportDir: '\\functionaltest\\target\\surefire-reports', reportFiles: 'index.html', reportName: 'HTML Report', reportTitles: ''])
+    stage('Quality - Functional') {
         
+        sh "mvn install -f functionaltest/pom.xml"
+        publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, keepAll: false, reportDir: '\\functionaltest\\target\\surefire-reports', reportFiles: 'index.html', reportName: 'HTML Report', reportTitles: ''])        
     }
     
-    //stage('Quality check') {
-        //blazeMeterTest credentialsId: 'jenkins-blaze', testId: '7895716.taurus', workspaceId: '475891'
-    //}
+    stage('Quality - Performance') {
+        blazeMeterTest credentialsId: 'jenkins-blaze', testId: '7895716.taurus', workspaceId: '475891'
+    }
     
     stage('QA deploy') {
         deploy adapters: [tomcat7(credentialsId: 'j-tomcat', path: '', url: 'http://18.222.6.241:8080/')], contextPath: '/PDMQAWebapp', war: '**/*.war'
+	// notify team on slack
+	slackSend channel: '#pdm-magk', color: 'good', message: "${env.BUILD_NUMBER} - QA deploy completed http://18.222.6.241:8080/PDMQAWebapp", teamDomain: 'gunjvm', tokenCredentialId: 'slack-jenkins'
     }
-    
-    stage('QA Notification') {
-        slackSend channel: '#pdm-magk', color: 'good', message: "${env.BUILD_NUMBER} - QA deploy completed http://18.222.6.241:8080/PDMQAWebapp", teamDomain: 'gunjvm', tokenCredentialId: 'slack-jenkins'
-    }
-    
-    stage('PROD deploy') {
-    //    deploy adapters: [tomcat7(credentialsId: 'j-tomcat', path: '', url: 'http://3.14.72.163:8080/')], contextPath: '/PDMPRODWebapp', war: '**/*.war'
-    }
-    
-    stage('PROD Notification') {
-        slackSend channel: '#pdm-magk', color: 'good', message: "${env.BUILD_NUMBER} - PROD deploy completed http://3.14.72.163:8080/PDMPRODWebapp", teamDomain: 'gunjvm', tokenCredentialId: 'slack-jenkins'
-    }
-    
-    environment {
-         jira_ticket = "git --no-pager show -s --format='%s' ${GIT_COMMIT}"
-        }
         
-    stage('Jira Prod update') {
-        //jira_ticket=sh "git --no-pager show -s --format='%s' ${GIT_COMMIT}"
-         
-         sh "echo $jira_ticket"
-         jiraComment body: "PROD deploy completed - Jenkins URL(${env.BUILD_URL}), PROD webapp - http://3.14.72.163:8080/PDMPRODWebapp", issueKey: "$jira_ticket"
+    stage('PROD deploy') {
+            deploy adapters: [tomcat7(credentialsId: 'j-tomcat', path: '', url: 'http://3.14.72.163:8080/')], contextPath: '/PDMPRODWebapp', war: '**/*.war'
+    }
+    
+    stage('Collaboration') {
+	//notify team on slack
+        slackSend channel: '#pdm-magk', color: 'good', message: "${env.BUILD_NUMBER} - PROD deploy completed http://3.14.72.163:8080/PDMPRODWebapp", teamDomain: 'gunjvm', tokenCredentialId: 'slack-jenkins'
+	// update Jira 
+	script {
+                    JIRA_TICKET = sh (
+                        script: 'git --no-pager show -s --format=\'%s\' ${GIT_COMMIT}',
+                        returnStdout: true
+                        ).trim()
+                }
+                echo "Jira Ticket Number: ${JIRA_TICKET}"
+                jiraComment body: "PROD deploy completed - Jenkins URL(${env.BUILD_URL}), PROD webapp - http://3.14.72.163:8080/PDMPRODWebapp", issueKey: "${JIRA_TICKET}"
+	
     }
 }
