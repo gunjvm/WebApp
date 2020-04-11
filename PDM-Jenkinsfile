@@ -66,6 +66,7 @@ node {
                         ).trim()
                 }
                 echo "Jira Ticket Number: ${JIRA_TICKET}"
+		//comment jira
                 jiraComment body: "PROD deploy completed - Jenkins URL(${env.BUILD_URL}), PROD webapp - http://3.14.72.163:8080/PDMPRODWebapp", issueKey: "${JIRA_TICKET}"
 	
     }
