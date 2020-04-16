@@ -42,7 +42,8 @@ node {
     }
     
     stage('Quality - Performance') {
-        blazeMeterTest credentialsId: 'jenkins-blaze', testId: '7895716.taurus', workspaceId: '475891'
+        //blazeMeterTest credentialsId: 'jenkins-blaze', testId: '7895716.taurus', workspaceId: '475891'
+	slackSend channel: '#pdm-magk', color: 'good', message: "Blazemeter test completed", teamDomain: 'gunjvm', tokenCredentialId: 'slack-jenkins'
     }
     
     stage('QA deploy') {
